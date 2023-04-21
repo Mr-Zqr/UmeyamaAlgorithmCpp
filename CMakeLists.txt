@@ -9,7 +9,3 @@ add_library(UmeyamaAlignment SHARED UmeyamaAlignment.cpp)
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
-
-add_executable(useUA main.cpp)
-
-target_link_libraries(useUA ${PROJECT_SOURCE_DIR}/build/libUmeyamaAlignment.so)
