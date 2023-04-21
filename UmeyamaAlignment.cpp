@@ -6,15 +6,22 @@
  */
 
 #include "UmeyamaAlignment.h"
+#include <ostream>
 
-void UmeyamaAlignment::align(std::vector<Eigen::Vector3d> & point_set_x, std::vector<Eigen::Vector3d> & point_set_y, Eigen::Matrix3d & R, Eigen::Vector3d & t, double & c)
+int UmeyamaAlignment::align(std::vector<Eigen::Vector3d> & point_set_x, std::vector<Eigen::Vector3d> & point_set_y, Eigen::Matrix3d & R, Eigen::Vector3d & t, double & c)
 {
     if(point_set_x.size() != point_set_y.size())
     {
-        std::cout << "The number of points in two point sets are not equal!" << std::endl;
-        return;
+        std::cout << "[Umeyama Alignment] The number of points in two point sets must be equal!" << std::endl;
+        throw;
     }
-
+    else if(point_set_x.size() < 3)
+    {
+        std::cout << "[Umeyama Alignment] The number of points in two point sets must be greater than 3!" << std::endl;
+        throw;
+    }
+    else 
+    {
     int point_size = point_set_x.size();
 
     Eigen::Vector3d miu_x = calc_miu(point_set_x, point_size);
@@ -23,11 +30,13 @@ void UmeyamaAlignment::align(std::vector<Eigen::Vector3d> & point_set_x, std::ve
     Eigen::Matrix3d H = calc_H(point_set_x, point_set_y, miu_x, miu_y, point_size);
     Eigen::Matrix3d DS_;
 
-    double delta_x = calc_delta(point_set_x, miu_x, point_size);
+    double sigma_x = calc_sigma(point_set_x, miu_x, point_size);
 
     R = calc_R(H, DS_);
     t = miu_y - R * miu_x;  
-    c = calc_c(delta_x, DS_);
+    c = calc_c(sigma_x, DS_);
+    return 1;
+    }
 }
 
 Eigen::Vector3d UmeyamaAlignment::calc_miu(std::vector<Eigen::Vector3d> & origin, int point_size)
@@ -46,7 +55,7 @@ Eigen::Matrix3d UmeyamaAlignment::calc_H(std::vector<Eigen::Vector3d> & x, std::
     Eigen::MatrixXd H = Eigen::MatrixXd::Zero(3, 3);
     for(int i = 0; i < point_size; i++)
     {
-        H = H + (x[i] - miu_x) * (y[i] - miu_y).transpose();
+        H = H + (y[i] - miu_y) * (x[i] - miu_x).transpose();
     }
     H = H / point_size;
     return H;
@@ -54,44 +63,51 @@ Eigen::Matrix3d UmeyamaAlignment::calc_H(std::vector<Eigen::Vector3d> & x, std::
 
 Eigen::Matrix3d UmeyamaAlignment::calc_R(Eigen::Matrix3d & origin, Eigen::Matrix3d & DS, const float er)
 {
-        // 进行svd分解
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd_holder(origin,
-                                                 Eigen::ComputeThinU |
-                                                 Eigen::ComputeThinV);
+// 进行svd分解
+   Eigen::JacobiSVD<Eigen::MatrixXd> svd_holder(origin,
+                                                Eigen::ComputeThinU |
+                                                Eigen::ComputeThinV);
+
     // 构建SVD分解结果
     Eigen::MatrixXd U = svd_holder.matrixU();
     Eigen::MatrixXd V = svd_holder.matrixV();
     Eigen::MatrixXd D = svd_holder.singularValues();
 
-    // 构建S矩阵
-    Eigen::MatrixXd S(V.cols(), U.cols());
-    S.setZero();
+    // 构建D矩阵
+    Eigen::MatrixXd Diag(V.cols(), U.cols());
+    Diag.setZero();
 
-    for (unsigned int i = 0; i < D.size(); ++i) {
-
+    Eigen::MatrixXd S = Eigen::MatrixXd::Identity(3, 3);
+    for (unsigned int i = 0; i < D.size(); ++i) 
+    {
         if (D(i, 0) > er) {
-            S(i, i) = D(i, 0);
+            Diag(i, i) = D(i, 0);
         } else {
-            S(i, i) = 0;
+            Diag(i, i) = 0;
         }
     }
-    return V * U.transpose();
+    if(origin.determinant() < 0)
+    {
+        S(2, 2) = -S(2, 2);
+    }
+    DS = Diag*S;
+    return U * V.transpose();
 }
 
-double UmeyamaAlignment::calc_delta(std::vector<Eigen::Vector3d> & x, Eigen::Vector3d miu_x, int point_size)
+double UmeyamaAlignment::calc_sigma(std::vector<Eigen::Vector3d> & x, Eigen::Vector3d miu_x, int point_size)
 {
-    double delta = 0;
+    double sigma = 0;
     for(int i = 0; i < point_size; i++)
     {
-        delta += (x[i] - miu_x).norm();
+        sigma = sigma + (x[i] - miu_x).norm() * (x[i] - miu_x).norm();
     }
-    delta = delta / point_size;
-    return delta;
+    sigma = sigma / point_size;
+    return sigma;
 }
 
-double UmeyamaAlignment::calc_c(double delta_x, Eigen::Matrix3d & DS)
+double UmeyamaAlignment::calc_c(double sigma_x, Eigen::Matrix3d & DS)
 {
     double c = 0;
-    c = DS.trace() / delta_x;
+    c = DS.trace() / sigma_x;
     return c;
 }
